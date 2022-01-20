@@ -359,6 +359,8 @@ class DataLoader(Generic[T_co]):
         # the iterator is only created once in the lifetime of the
         # DataLoader object so that workers can be reused
         if self.persistent_workers and self.num_workers > 0:
+            import atexit
+            atexit.register(self._cleanup_persistent_workers)
             if self._iterator is None:
                 self._iterator = self._get_iterator()
             else:
@@ -366,6 +368,19 @@ class DataLoader(Generic[T_co]):
             return self._iterator
         else:
             return self._get_iterator()
+
+    # Each persistent worker, as a daemonic process, would be
+    # terminated when the main process exits and causes failure
+    # when pin_memory_thread gets corrupted data from
+    # worker_result_queue
+    # Therefore, a proper clean-up function is required to be invoked
+    # before the main process exits
+    # The iterator is dereferenced from DataLoader object and destructor
+    # of the iterator would be invoked to make sure pin_memory_thread
+    # exiting before worker process
+    def _cleanup_persistent_workers(self):
+        if hasattr(self, "_iterator") and self._iterator is not None:
+            self._iterator = None
 
     @property
     def _auto_collation(self):
